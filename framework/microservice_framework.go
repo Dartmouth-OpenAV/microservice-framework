@@ -394,6 +394,22 @@ func functionStackExist(functionName string, endPoint string, socketKey string) 
 	return false
 }
 
+func CheckForDeviceInCache(socketKey string) bool {
+	//function := "CheckForDeviceInCache"
+
+	deviceStatesMutex.Lock()
+	defer deviceStatesMutex.Unlock()
+
+	// Log(function + " - socketKey: " + socketKey)
+	if _, ok := deviceStates[socketKey]; !ok {
+		// Log(function + " - " + socketKey + " - first we hear of device")
+		return false // wasn't in cache
+	}
+	// Log(function + " - device was in the cache")
+
+	return true
+}
+
 func CheckForEndPointInCache(socketKey string, endPoint string) bool {
 	// function := "checkForEndPointInCache"
 
