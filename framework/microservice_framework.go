@@ -1,4 +1,4 @@
-//version 1.1.8
+//version 1.2.8
 
 package framework
 
@@ -824,6 +824,66 @@ func addToErrorsAndReturn(socketKey string, errorMessage string, toReturn bool) 
 	AddToErrors(socketKey, errorMessage)
 
 	return toReturn
+}
+
+// Will try to read a byte from the socket to see if the client is actually still connected.
+// Needed when using KeepAlive on a device that will close the connection after a period of inactivity
+func IsClientConnected(socketKey string) bool {
+	function := "IsClientConnected"
+	Log(function + " - checking if client is connected: " + socketKey)
+
+	if !CheckConnectionsMapExists(socketKey) {
+		Log(function + socketKey + " - connection not in table")
+		return false // framework closed the connection
+	}
+
+	if UseUDP {
+		// We can only check if the socket is still open
+		connectionsMutex.Lock()
+		defer connectionsMutex.Unlock()
+
+		if conn, ok := connectionsUDP[socketKey]; ok {
+			return conn != nil
+		}
+		return false
+	}
+
+	// TCP
+	connectionsMutex.Lock()
+	defer connectionsMutex.Unlock()
+
+	// Set a very short timeout for the test
+	err := connectionsTCP[socketKey].SetReadDeadline(time.Now().Add(10 * time.Millisecond))
+	if err != nil {
+		AddToErrors(socketKey, function+" - "+socketKey+" - cc05p2 can't set read timeout with: "+err.Error())
+	}
+
+	// reset timeout to default settings
+	defer func() {
+		err := connectionsTCP[socketKey].SetReadDeadline(time.Now().Add(time.Duration(TryReadTimeout) * time.Millisecond))
+		if err != nil {
+			AddToErrors(socketKey, function+" - "+socketKey+" - d9541in can't set read timeout with: "+err.Error())
+			// TODO: should we panic?
+		}
+	}()
+
+	// Try a one-byte read, which won't block for long
+	oneByte := make([]byte, 1)
+	if _, err := connectionsTCP[socketKey].Read(oneByte); err != nil {
+		if err == io.EOF {
+			// Connection closed by client
+			Log(function + socketKey + " - connection was closed by client")
+			return false
+		}
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			// Timeout is expected: the connection is still open
+			Log(function + socketKey + " - connection is still open")
+			return true
+		}
+		Log(function + " - error reading from socket: " + err.Error())
+		return false
+	}
+	return true
 }
 
 func handleGet(context echo.Context) error {
