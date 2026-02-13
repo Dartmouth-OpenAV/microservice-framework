@@ -1,4 +1,4 @@
-//version 1.4.10
+//version 1.5.0
 
 package framework
 
@@ -1556,17 +1556,15 @@ func StripProtocolPrefix(socketKey string) string {
 	return socketKey
 }
 
-// Used for the Bravia microservice
-// This function started from a tutorial: https://www.soberkoder.com/consume-rest-api-go/
-func DoPost(socketKey string, theURL string, jsonReq string) (string, error) {
+// Backwards compatibility function for Sony FPD microservice
+func DoPost(socketKey string, url string, body string) (string, error) {
 	function := "DoPost"
 
 	// Remove protocol from socketKey if specified
 	socketKeySanitized := StripProtocolPrefix(socketKey)
 
-	postURL := "http://" + socketKeySanitized + "/" + theURL
-	Log("======> " + function + " - doing POST to: " + postURL + " with contents: " + jsonReq)
-	jsonReqBytes := []byte(jsonReq)
+	postURL := "http://" + socketKeySanitized + "/" + url
+	Log("======> " + function + " - doing POST to: " + postURL + " with contents: " + body)
 	password := ""
 	apiKey := ""
 
@@ -1578,9 +1576,8 @@ func DoPost(socketKey string, theURL string, jsonReq string) (string, error) {
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodPost, postURL,
-		bytes.NewBuffer(jsonReqBytes))
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	headers := map[string]string{}
+	headers["Content-Type"] = "application/json; charset=utf-8"
 
 	// An apiKey can be passed through as a password in the URL for the microservice.
 	// If none is provided, 1234 is used by default.
@@ -1589,31 +1586,69 @@ func DoPost(socketKey string, theURL string, jsonReq string) (string, error) {
 	} else {
 		apiKey = "1234"
 	}
-	// Log("APIKEY: " + apiKey)
-	req.Header.Set("x-auth-psk", apiKey)
+	headers["x-auth-psk"] = apiKey
+
+	_,_,responseBody, err := HTTPRequest(socketKey, "POST", postURL, headers, body)
+	return responseBody, err
+}
+
+// Generic HTTP request function
+func HTTPRequest(socketKey string, requestType string, requestURL string, headers map[string]string, body string) (http.Header, int, string, error) {
+	function := "HTTPRequest"
+	Log(function + " - doing " + requestType + " to: " + requestURL + " with contents: " + body)
+	jsonReqBytes := []byte(body)
+
+	// Input validation
+	if requestURL == "" {
+		errMsg := fmt.Sprintf("%s requestURL cannot be empty", function)
+		return nil, 0, errMsg, errors.New("requestURL cannot be empty")
+	}
+	switch requestType {
+	case "GET", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "PATCH", "HEAD":
+		break
+	default:
+		errMsg := fmt.Sprintf(function+" invalid HTTP method: %s", requestType)
+		return nil, 0, errMsg, errors.New("invalid HTTP method: " + requestType)
+	}
+
+	// Create the request
+	req, err := http.NewRequest(requestType, requestURL, bytes.NewBuffer(jsonReqBytes))
+
+	if err != nil {
+		errMsg := fmt.Sprintf(function+" - 4t9jfdl error creating http request. got error %v", err)
+		return nil, 0, errMsg, err
+	}
+
+	// Add the passed in headers to the request
+	for headerKey, headerValue := range headers {
+		req.Header.Set(headerKey, headerValue)
+	}
+
+	// Send the request
 	client := &http.Client{
 		Timeout: 2 * time.Second,
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		errMsg := fmt.Sprintf(function+" - 423dfsaknnl HTTP client.DO error: %v", err)
-		Log(errMsg)
+		errMsg := fmt.Sprintf(function+" - 423d5anl HTTP client.DO error: %v", err)
 		AddToErrors(socketKey, errMsg)
-		return errMsg, err
+		return nil, 0, errMsg, err
 	}
 
 	defer resp.Body.Close()
+
+	// Read the response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		errMsg := fmt.Sprintf(function+" - 32rqfsada HTTP ioutil.ReadAll error: %v", err)
-		Log(errMsg)
 		AddToErrors(socketKey, errMsg)
-		return errMsg, err
+		return nil, 0, errMsg, err
 	}
+	responseCode := resp.StatusCode
 
 	// Convert response body to string
 	bodyString := string(bodyBytes)
-	Log("<====== " + function + " - got bodyString: " + bodyString)
+	Log(function + " - got bodyString: " + bodyString)
 
-	return bodyString, nil
+	return resp.Header, responseCode, bodyString, nil
 }
