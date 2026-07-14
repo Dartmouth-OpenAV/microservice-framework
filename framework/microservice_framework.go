@@ -1,4 +1,4 @@
-//version 1.5.0
+//version 1.5.1
 
 package framework
 
@@ -1648,7 +1648,6 @@ func HTTPRequest(socketKey string, requestType string, requestURL string, header
 
 	// Convert response body to string
 	bodyString := string(bodyBytes)
-	Log(function + " - got bodyString: " + bodyString)
 
 	return resp.Header, responseCode, bodyString, nil
 }
